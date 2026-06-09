@@ -9,74 +9,83 @@ echo "================================"
 
 # ─── Detectar PHP ─────────────────────────────────────────────────────────────
 find_php() {
-    # 1. Rutas típicas de Plesk (ordenadas por versión descendente)
     for p in \
         /opt/plesk/php/8.4/bin/php \
         /opt/plesk/php/8.3/bin/php \
         /opt/plesk/php/8.2/bin/php \
         /usr/bin/php8.4 \
         /usr/bin/php8.3 \
-        /usr/bin/php8.2 \
-        /usr/local/bin/php8.3 \
         /usr/local/bin/php \
-        /usr/bin/php \
-        php; do
-        if command -v "$p" &>/dev/null || [ -x "$p" ]; then
-            echo "$p"
-            return 0
-        fi
+        /usr/bin/php; do
+        [ -x "$p" ] && echo "$p" && return 0
     done
+    command -v php &>/dev/null && echo "php" && return 0
     return 1
 }
 
 PHP=$(find_php) || {
-    echo "❌ No se encontró PHP 8.3+. Rutas buscadas:"
-    echo "   /opt/plesk/php/8.3/bin/php"
-    echo "   /usr/bin/php8.3  /usr/local/bin/php  /usr/bin/php"
-    echo ""
-    echo "Soluciones:"
-    echo "  1. Ejecuta: export PATH=\$PATH:/opt/plesk/php/8.3/bin  y vuelve a lanzar"
-    echo "  2. O pasa la ruta: PHP=/opt/plesk/php/8.3/bin/php bash deploy.sh"
+    echo "❌ PHP no encontrado. Pasa la ruta: PHP=/opt/plesk/php/8.4/bin/php bash deploy.sh"
     exit 1
 }
-
 PHP_VER=$("$PHP" -r "echo PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION;")
 echo "✓ PHP $PHP_VER  →  $PHP"
 
-# ─── Detectar Composer ────────────────────────────────────────────────────────
-find_composer() {
-    for c in \
-        /opt/plesk/php/8.4/bin/composer \
-        /opt/plesk/php/8.3/bin/composer \
-        /usr/local/bin/composer \
-        /usr/bin/composer \
-        composer; do
-        if command -v "$c" &>/dev/null || [ -x "$c" ]; then
-            echo "$c"; return 0
-        fi
-    done
-    # Si hay composer.phar en el proyecto
-    [ -f composer.phar ] && echo "$PHP composer.phar" && return 0
-    return 1
-}
+# Añadir el bin de PHP al PATH para que Composer lo encuentre como "php"
+PHP_BIN_DIR=$(dirname "$PHP")
+export PATH="$PHP_BIN_DIR:$PATH"
 
-COMPOSER=$(find_composer) || {
-    echo "❌ Composer no encontrado."
-    echo "   Instálalo con: curl -sS https://getcomposer.org/installer | $PHP"
-    echo "   Luego: mv composer.phar /usr/local/bin/composer && chmod +x /usr/local/bin/composer"
-    exit 1
-}
+# ─── Detectar Composer ────────────────────────────────────────────────────────
+if [ -f composer.phar ]; then
+    COMPOSER="$PHP composer.phar"
+elif command -v composer &>/dev/null; then
+    COMPOSER="composer"
+else
+    echo "⚠  Composer no encontrado. Descargando composer.phar..."
+    "$PHP" -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
+    "$PHP" composer-setup.php --quiet
+    rm composer-setup.php
+    COMPOSER="$PHP composer.phar"
+fi
 echo "✓ Composer  →  $COMPOSER"
 
 # ─── Detectar Node / npm ──────────────────────────────────────────────────────
-if command -v node &>/dev/null; then
-    NODE_VER=$(node -v)
-    echo "✓ Node $NODE_VER"
-    BUILD_FRONTEND=true
-else
-    echo "⚠  Node.js no encontrado. Saltando compilación frontend."
-    echo "   Asegúrate de que public/build/ existe (compila localmente y sube)."
-    BUILD_FRONTEND=false
+# Node 12 es demasiado antiguo; Vite requiere Node 18+
+NODE_OK=false
+for n in \
+    /opt/plesk/node/18/bin/node \
+    /opt/plesk/node/20/bin/node \
+    /opt/plesk/node/22/bin/node \
+    /usr/local/bin/node \
+    node; do
+    if ([ -x "$n" ] || command -v "$n" &>/dev/null) 2>/dev/null; then
+        NODE_VER=$("$n" -e "process.exit(parseInt(process.versions.node)<18?1:0)" 2>/dev/null && "$n" -v)
+        if [ $? -eq 0 ]; then
+            NODE_BIN_DIR=$(dirname "$n")
+            export PATH="$NODE_BIN_DIR:$PATH"
+            echo "✓ Node $("$n" -v)  →  $n"
+            NODE_OK=true
+            break
+        fi
+    fi
+done
+
+if [ "$NODE_OK" = false ]; then
+    if [ -d "public/build" ]; then
+        echo "⚠  Node 18+ no disponible. Usando public/build/ existente."
+    else
+        echo ""
+        echo "❌ Node.js 18+ no encontrado y public/build/ no existe."
+        echo "   Opción 1 – Compilar en tu máquina local y subir la carpeta:"
+        echo "     npm run build"
+        echo "     scp -r public/build/ root@servidor:/var/www/vhosts/phishing.botanalisis.com/httpdocs/public/"
+        echo ""
+        echo "   Opción 2 – Instalar Node 18 en el servidor:"
+        echo "     curl -fsSL https://deb.nodesource.com/setup_18.x | bash -"
+        echo "     apt-get install -y nodejs"
+        echo ""
+        echo "   Después vuelve a ejecutar: bash deploy.sh"
+        exit 1
+    fi
 fi
 
 echo ""
@@ -86,17 +95,12 @@ echo "📦 Instalando dependencias Composer..."
 $COMPOSER install --no-dev --optimize-autoloader --no-interaction
 
 # ─── 2. Frontend ──────────────────────────────────────────────────────────────
-if [ "$BUILD_FRONTEND" = true ]; then
+if [ "$NODE_OK" = true ]; then
     echo "🎨 Compilando assets Vite..."
     npm ci --silent
     npm run build
 else
-    if [ ! -d "public/build" ]; then
-        echo "❌ public/build/ no existe y Node no está disponible."
-        echo "   Compila localmente (npm run build) y sube la carpeta public/build/"
-        exit 1
-    fi
-    echo "✓ Usando public/build/ existente"
+    echo "✓ Usando public/build/ existente (Node 18+ no disponible)"
 fi
 
 # ─── 3. Permisos ──────────────────────────────────────────────────────────────
@@ -143,14 +147,9 @@ echo ""
 echo "✅ Deploy completado."
 echo "   URL: $APP_URL"
 echo ""
-echo "─── Próximos pasos ──────────────────────────────────────────────────────"
-echo "1. Añade estos cron jobs en Plesk → Tareas programadas:"
-echo ""
-echo "   # Scheduler (cada minuto)"
+echo "─── Cron jobs para Plesk → Tareas programadas ───────────────────────────"
 echo "   * * * * * $PHP $(pwd)/artisan schedule:run >> /dev/null 2>&1"
-echo ""
-echo "   # Worker de colas (cada 5 min)"
 echo "   */5 * * * * $PHP $(pwd)/artisan queue:work database --queue=campaigns,tracking,default --tries=3 --max-time=240 --stop-when-empty >> /dev/null 2>&1"
 echo ""
-echo "2. Activa HTTPS con Let's Encrypt en Plesk → SSL/TLS"
-echo "3. Verifica que Document Root apunta a: $(pwd)/public"
+echo "─── Verifica ────────────────────────────────────────────────────────────"
+echo "   Document Root en Plesk → $(pwd)/public"
