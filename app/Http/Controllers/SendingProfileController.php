@@ -16,14 +16,14 @@ class SendingProfileController extends Controller
 
     public function index(): Response
     {
-        $org = auth()->user()->organization;
+        $org = $this->currentOrg();
         $profiles = SendingProfile::where('organization_id', $org->id)->get();
         return Inertia::render('SendingProfiles/Index', compact('profiles'));
     }
 
     public function store(Request $request): RedirectResponse
     {
-        $org = auth()->user()->organization;
+        $org = $this->currentOrg();
         $data = $request->validate([
             'name'           => 'required|string|max:255',
             'from_name'      => 'required|string|max:100',

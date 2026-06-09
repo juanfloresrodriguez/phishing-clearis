@@ -14,7 +14,7 @@ class TargetUserController extends Controller
 {
     public function index(Request $request): Response
     {
-        $org = auth()->user()->organization;
+        $org = $this->currentOrg();
         $users = TargetUser::where('organization_id', $org->id)
             ->when($request->search, fn($q, $s) => $q->where('email', 'like', "%{$s}%")
                 ->orWhere('first_name', 'like', "%{$s}%")
@@ -32,7 +32,7 @@ class TargetUserController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        $org = auth()->user()->organization;
+        $org = $this->currentOrg();
         $data = $request->validate([
             'first_name'  => 'required|string|max:100',
             'last_name'   => 'required|string|max:100',
@@ -56,7 +56,7 @@ class TargetUserController extends Controller
 
     public function importCsv(Request $request): RedirectResponse
     {
-        $org = auth()->user()->organization;
+        $org = $this->currentOrg();
         $request->validate(['file' => 'required|file|mimes:csv,txt|max:5120']);
 
         $csv = Reader::createFromPath($request->file('file')->getRealPath(), 'r');

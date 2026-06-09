@@ -13,7 +13,7 @@ class LandingPageController extends Controller
 {
     public function index(): Response
     {
-        $org = auth()->user()->organization;
+        $org = $this->currentOrg();
         $pages = LandingPage::where('organization_id', $org->id)
             ->orderByDesc('created_at')
             ->paginate(20);
@@ -28,7 +28,7 @@ class LandingPageController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        $org = auth()->user()->organization;
+        $org = $this->currentOrg();
         $data = $this->validatePage($request);
         $data['organization_id'] = $org->id;
         $data['created_by'] = auth()->id();

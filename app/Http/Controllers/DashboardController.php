@@ -12,7 +12,7 @@ class DashboardController extends Controller
 {
     public function index(): Response
     {
-        $org = auth()->user()->organization;
+        $org = $this->currentOrg();
 
         $stats = [
             'total_campaigns'  => Campaign::where('organization_id', $org->id)->count(),

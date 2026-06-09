@@ -13,7 +13,7 @@ class GroupController extends Controller
 {
     public function index(): Response
     {
-        $org = auth()->user()->organization;
+        $org = $this->currentOrg();
         $groups = Group::where('organization_id', $org->id)
             ->withCount('targetUsers')
             ->get();
@@ -23,7 +23,7 @@ class GroupController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        $org = auth()->user()->organization;
+        $org = $this->currentOrg();
         $data = $request->validate([
             'name'            => 'required|string|max:255',
             'description'     => 'nullable|string|max:500',

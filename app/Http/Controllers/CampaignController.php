@@ -23,7 +23,7 @@ class CampaignController extends Controller
 
     public function index(): Response
     {
-        $org = auth()->user()->organization;
+        $org = $this->currentOrg();
         $campaigns = Campaign::where('organization_id', $org->id)
             ->with(['emailTemplate', 'sendingProfile'])
             ->orderByDesc('created_at')
@@ -35,7 +35,7 @@ class CampaignController extends Controller
 
     public function create(): Response
     {
-        $org = auth()->user()->organization;
+        $org = $this->currentOrg();
         return Inertia::render('Campaigns/Create', [
             'templates' => EmailTemplate::where('organization_id', $org->id)->where('is_active', true)->get(),
             'landingPages' => LandingPage::where('organization_id', $org->id)->where('is_active', true)->get(),
@@ -46,7 +46,7 @@ class CampaignController extends Controller
 
     public function store(StoreCampaignRequest $request): RedirectResponse
     {
-        $org = auth()->user()->organization;
+        $org = $this->currentOrg();
         $data = $request->validated();
         $data['organization_id'] = $org->id;
         $data['created_by'] = auth()->id();
@@ -91,7 +91,7 @@ class CampaignController extends Controller
         $this->authorizeOrg($campaign);
         abort_if(!in_array($campaign->status, ['draft', 'scheduled']), 403, 'Cannot edit a running campaign.');
 
-        $org = auth()->user()->organization;
+        $org = $this->currentOrg();
         $campaign->load('groups');
 
         return Inertia::render('Campaigns/Edit', [

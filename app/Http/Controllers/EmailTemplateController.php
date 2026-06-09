@@ -14,7 +14,7 @@ class EmailTemplateController extends Controller
 {
     public function index(): Response
     {
-        $org = auth()->user()->organization;
+        $org = $this->currentOrg();
         $templates = EmailTemplate::where('organization_id', $org->id)
             ->orderByDesc('created_at')
             ->paginate(20);
@@ -34,7 +34,7 @@ class EmailTemplateController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        $org = auth()->user()->organization;
+        $org = $this->currentOrg();
         $data = $this->validateTemplate($request);
         $data['organization_id'] = $org->id;
         $data['created_by'] = auth()->id();
