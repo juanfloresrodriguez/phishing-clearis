@@ -1,0 +1,24 @@
+# .htaccess raíz – redirige todo a public/ cuando el Document Root no está en public/
+# Si cambias el Document Root de Plesk a httpdocs/public/, este fichero no es necesario.
+
+Options -Indexes
+
+RewriteEngine On
+
+# Servir ficheros estáticos directamente desde public/ (assets, imágenes, etc.)
+RewriteCond %{REQUEST_URI} ^/build/
+RewriteRule ^build/(.*)$ public/build/$1 [L]
+
+RewriteCond %{REQUEST_URI} ^/storage/
+RewriteRule ^storage/(.*)$ public/storage/$1 [L]
+
+RewriteCond %{REQUEST_URI} ^/favicon\.ico$
+RewriteRule ^favicon\.ico$ public/favicon.ico [L]
+
+RewriteCond %{REQUEST_URI} ^/robots\.txt$
+RewriteRule ^robots\.txt$ public/robots.txt [L]
+
+# Todo lo demás va al index.php puente
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.php [L]
