@@ -1,0 +1,109 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: clearphish_app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/var/www/html
+      - ./docker/php/local.ini:/usr/local/etc/php/conf.d/local.ini
+    environment:
+      - APP_ENV=local
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - clearphish
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: clearphish_worker
+    restart: unless-stopped
+    command: php artisan queue:work redis --queue=campaigns,tracking,default --tries=3 --timeout=90 --sleep=3
+    volumes:
+      - .:/var/www/html
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - clearphish
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: clearphish_scheduler
+    restart: unless-stopped
+    command: php artisan schedule:work
+    volumes:
+      - .:/var/www/html
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - clearphish
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: clearphish_postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: clearphish
+      POSTGRES_USER: clearphish
+      POSTGRES_PASSWORD: secret
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clearphish -d clearphish"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - clearphish
+
+  redis:
+    image: redis:7-alpine
+    container_name: clearphish_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - clearphish
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: clearphish_mailpit
+    restart: unless-stopped
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+    networks:
+      - clearphish
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  clearphish:
+    driver: bridge
