@@ -25,6 +25,15 @@ class DatabaseSeeder extends Seeder
             Role::firstOrCreate(['name' => $role, 'guard_name' => 'web']);
         }
 
+        // Detectar dominio desde APP_URL o usar demo.local como fallback
+        $appUrl = config('app.url', 'http://localhost');
+        $host = parse_url($appUrl, PHP_URL_HOST) ?? 'localhost';
+        // Extraer dominio principal (ej: phishing.botanalisis.com → botanalisis.com)
+        $parts = explode('.', $host);
+        $seedDomain = count($parts) >= 2
+            ? implode('.', array_slice($parts, -2))
+            : 'demo.local';
+
         // Create demo organization
         $org = Organization::firstOrCreate(
             ['slug' => 'demo-org'],
@@ -37,47 +46,58 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        // Add demo domain (pre-verified for seeding)
+        // Add domain (pre-verified for seeding – mark as pending in production)
+        $isProd = config('app.env') === 'production';
         OrganizationDomain::firstOrCreate(
-            ['organization_id' => $org->id, 'domain' => 'demo.local'],
+            ['organization_id' => $org->id, 'domain' => $seedDomain],
             [
-                'verification_token' => 'clearphish-verify=demo',
-                'is_verified'        => true,
-                'verified_at'        => now(),
-                'allow_recipients'   => true,
-                'allow_sending'      => true,
+                'verification_token' => 'clearphish-verify=' . bin2hex(random_bytes(8)),
+                'is_verified'        => !$isProd, // auto-verified only in dev/local
+                'verified_at'        => !$isProd ? now() : null,
+                'allow_recipients'   => !$isProd,
+                'allow_sending'      => !$isProd,
             ]
         );
 
         // Create admin user
+        $adminEmail = $isProd ? "admin@{$seedDomain}" : "admin@demo.local";
         $admin = User::firstOrCreate(
-            ['email' => 'admin@demo.local'],
+            ['email' => $adminEmail],
             [
                 'name'            => 'Admin User',
-                'password'        => Hash::make('password'),
+                'password'        => Hash::make('P@ssw0rd-ClearPhish!'),
                 'organization_id' => $org->id,
             ]
         );
         $admin->assignRole('org_admin');
 
-        // Create sending profile (uses Mailpit in dev)
+        // Create sending profile (uses MAIL_* env vars)
         $profile = SendingProfile::firstOrCreate(
-            ['organization_id' => $org->id, 'from_email' => 'security@demo.local'],
+            ['organization_id' => $org->id, 'from_email' => config('mail.from.address')],
             [
-                'name'            => 'Demo SMTP (Mailpit)',
-                'from_name'       => 'IT Security Team',
+                'name'            => $isProd ? 'SMTP Principal' : 'Demo SMTP (Mailpit)',
+                'from_name'       => config('mail.from.name', 'IT Security Team'),
                 'mailer'          => 'smtp',
-                'smtp_host'       => env('MAIL_HOST', 'mailpit'),
-                'smtp_port'       => env('MAIL_PORT', 1025),
-                'smtp_encryption' => 'none',
-                'is_verified'     => true,
-                'spf_ok'          => true,
-                'dkim_ok'         => true,
-                'dmarc_ok'        => true,
+                'smtp_host'       => config('mail.mailers.smtp.host', 'localhost'),
+                'smtp_port'       => (int) config('mail.mailers.smtp.port', 1025),
+                'smtp_encryption' => config('mail.mailers.smtp.encryption', 'none') ?? 'none',
+                'smtp_username'   => config('mail.mailers.smtp.username'),
+                'smtp_password'   => config('mail.mailers.smtp.password'),
+                'is_verified'     => !$isProd,
+                'spf_ok'          => !$isProd,
+                'dkim_ok'         => !$isProd,
+                'dmarc_ok'        => !$isProd,
             ]
         );
 
-        // Create sample target users
+        if ($isProd) {
+            $this->command->warn("⚠  Producción: verifica el dominio '{$seedDomain}' en Organization → Dominios.");
+            $this->command->warn("⚠  Login admin: {$adminEmail} / P\@ssw0rd-ClearPhish!");
+            $this->command->warn("⚠  Cambia la contraseña inmediatamente tras el primer acceso.");
+            return; // No crear usuarios de demo en producción
+        }
+
+        // Create sample target users (solo en dev)
         $targetUsers = [];
         $sampleUsers = [
             ['Ana', 'García', 'ana.garcia@demo.local', 'Engineering'],
@@ -182,6 +202,6 @@ HTML,
             ]
         );
 
-        $this->command->info('✅ Demo data seeded. Login: admin@demo.local / password');
+        $this->command->info("✅ Demo data seeded. Login: {$adminEmail} / password");
     }
 }
